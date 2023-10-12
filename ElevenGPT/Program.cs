@@ -1,7 +1,11 @@
 ﻿using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Json;
 using Discord;
 using Discord.Audio;
 using Discord.WebSocket;
+using ElevenLabs;
+using static System.Net.WebRequestMethods;
 
 namespace ElevenGPT
 {
@@ -9,9 +13,9 @@ namespace ElevenGPT
     {
         private static readonly Dictionary<string, BuildableCommand> slashNameActionMap = new() { };
 
-        private static readonly List<string> personalities = new() { "Personality1" };
+        private static List<string> personalities = new() { "test" };
 
-        private static readonly List<string> voices = new() { "Voice1" };
+        private static List<ElevenLabs.Voices.Voice> voices = new();
 
         private const GatewayIntents intents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.MessageContent;
 
@@ -36,41 +40,50 @@ namespace ElevenGPT
 
             try
             {
-                token = File.ReadAllText("token");
+                token = System.IO.File.ReadAllText("token");
             }
             catch
             {
                 Console.Write("Bot token not found, please enter your bot's token: ");
                 token = Console.ReadLine() ?? "";
-                File.WriteAllText("token", token);
+                System.IO.File.WriteAllText("token", token);
             }
 
             try
             {
-                chatGPTToken = File.ReadAllText("chatgpttoken");
+                chatGPTToken = System.IO.File.ReadAllText("chatgpttoken");
             }
             catch
             {
                 Console.Write("OpenAI token not found, please enter your api token: ");
                 chatGPTToken = Console.ReadLine() ?? "";
-                File.WriteAllText("chatgpttoken", chatGPTToken);
+                System.IO.File.WriteAllText("chatgpttoken", chatGPTToken);
             }
 
             try
             {
-                elevenLabsToken = File.ReadAllText("elevenlabstoken");
+                elevenLabsToken = System.IO.File.ReadAllText("elevenlabstoken");
             }
             catch
             {
                 Console.Write("Eleven Labs token not found, please enter your api token: ");
                 elevenLabsToken = Console.ReadLine() ?? "";
-                File.WriteAllText("elevenlabstoken", elevenLabsToken);
+                System.IO.File.WriteAllText("elevenlabstoken", elevenLabsToken);
             }
+
+            voices = await GetVoices();
+            voices.ForEach(voice => Console.WriteLine(voice.Name));
 
             await client.LoginAsync(TokenType.Bot, token);
             await client.StartAsync();
 
             await Task.Delay(-1);
+        }
+
+        private async Task<List<ElevenLabs.Voices.Voice>> GetVoices()
+        {
+            var api = new ElevenLabsClient(elevenLabsToken);
+            return ((List<ElevenLabs.Voices.Voice>)await api.VoicesEndpoint.GetAllVoicesAsync()).Where(voice => voice.Category == "cloned").ToList();
         }
 
         private async Task Ready()
@@ -111,6 +124,7 @@ namespace ElevenGPT
                         .WithLabel(personality)
                         )
                     );
+
                 await channel.SendMessageAsync(text: "Choose a personality:", components: personalityComponentBuilder.Build());
 
                 var voiceComponentBuilder = new ComponentBuilder()
@@ -118,8 +132,8 @@ namespace ElevenGPT
                     "Voice",
                     voices.ConvertAll(
                         voice => new SelectMenuOptionBuilder()
-                        .WithValue(voice)
-                        .WithLabel(voice)
+                        .WithValue(voice.Id)
+                        .WithLabel(voice.Name)
                         )
                     );
                 await channel.SendMessageAsync(text: "Choose a voice:", components: voiceComponentBuilder.Build());
