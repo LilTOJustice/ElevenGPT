@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using ChatGPT.Net;
 using Discord;
 using Discord.Audio;
@@ -11,14 +12,17 @@ namespace ElevenGPT
     {
         private static string msgChannelName = "elevengpt-requests";
 
-        private static readonly Dictionary<string, BuildableCommand> slashNameActionMap = new() { };
-
-        private static readonly string basePrompt = "You are to become the character given by the following description: ";
+        private static readonly string basePrompt = "You are to become the character given by the description in the next sentence," +
+            " are to respond as that character without ever breaking character, and refrain from multiple paragraph-long responses. ";
         private static Dictionary<string, string> personalities = new() {
             {
-                "The Narrator",
+                "patrickbateman",
+                "Patrick Bateman, the main character of the hit movie, American Psycho."
+            },
+            {
+                "thenarrator",
                 "The Narrator from the popular videogame, The Stanley parable."
-            }
+            },
         };
 
         private static Dictionary<string, ElevenLabs.Voices.Voice> voices = new();
@@ -26,6 +30,10 @@ namespace ElevenGPT
         private const GatewayIntents intents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.MessageContent | GatewayIntents.GuildMessages;
 
         private DiscordSocketClient client = new(new DiscordSocketConfig() { GatewayIntents = intents });
+
+        private static ChatGpt? chatGpt = null;
+
+        private static ElevenLabsClient? elevenLabs = null;
 
         private static string token = string.Empty;
 
@@ -42,13 +50,11 @@ namespace ElevenGPT
             client.Log += Log;
             client.Ready += Ready;
             client.SlashCommandExecuted += SlashCommandExecuted;
-            client.SelectMenuExecuted += SelectMenuExecuted;
             client.MessageReceived += MessageReceived;
 
             try
             {
                 token = File.ReadAllText("token");
-                Console.WriteLine("Got bot token: ", token);
             }
             catch
             {
@@ -60,7 +66,6 @@ namespace ElevenGPT
             try
             {
                 chatGPTToken = File.ReadAllText("chatgpttoken");
-                Console.WriteLine("Got ChatGPT token: ", chatGPTToken);
             }
             catch
             {
@@ -72,7 +77,6 @@ namespace ElevenGPT
             try
             {
                 elevenLabsToken = File.ReadAllText("elevenlabstoken");
-                Console.WriteLine("Got ElevenLabs token: ", elevenLabsToken);
             }
             catch
             {
@@ -80,6 +84,9 @@ namespace ElevenGPT
                 elevenLabsToken = Console.ReadLine() ?? "";
                 File.WriteAllText("elevenlabstoken", elevenLabsToken);
             }
+
+            chatGpt = new ChatGpt(chatGPTToken);
+            elevenLabs = new ElevenLabsClient(elevenLabsToken);
 
             voices = await GetVoices();
 
@@ -91,12 +98,28 @@ namespace ElevenGPT
 
         private async Task<Dictionary<string, ElevenLabs.Voices.Voice>> GetVoices()
         {
-            var api = new ElevenLabsClient(elevenLabsToken);
-            return ((List<ElevenLabs.Voices.Voice>)await api.VoicesEndpoint.GetAllVoicesAsync()).Where(voice => voice.Category == "cloned").ToList().ToDictionary(voice => voice.Id);
+            return ((List<ElevenLabs.Voices.Voice>)await elevenLabs!.VoicesEndpoint.GetAllVoicesAsync()).Where(voice => voice.Category == "cloned").ToList().ToDictionary(voice => voice.Name.Replace(" ", string.Empty).ToLower());
         }
 
         private async Task Ready()
         {
+            var voiceCommandBuilder = new SlashCommandBuilder();
+            voiceCommandBuilder.WithName("voice").WithDescription("Choose a voice to respond with.");
+            foreach (var voice in voices)
+            {
+                voiceCommandBuilder.AddOption(voice.Key, ApplicationCommandOptionType.SubCommand, "Choose a voice to respond with.");
+            }
+
+            var personalityCommandBuilder = new SlashCommandBuilder();
+            personalityCommandBuilder.WithName("personality").WithDescription("Choose a voice to respond with.");
+            foreach (var personality in personalities)
+            {
+                personalityCommandBuilder.AddOption(personality.Key, ApplicationCommandOptionType.SubCommand, "Choose a personality to use for the response.");
+            }
+
+            var clearCommandBuilder = new SlashCommandBuilder();
+            clearCommandBuilder.WithName("clear-conversation").WithDescription("Clears the conversation with the current personality");
+
             foreach (var guild in client.Guilds)
             {
                 var channels = guild.TextChannels.Where(channel => channel.Name == "elevengpt-requests");
@@ -110,43 +133,18 @@ namespace ElevenGPT
                 var channel = channels.First();
                 await channel.DeleteMessagesAsync((await channel.GetMessagesAsync().ToListAsync()).First());
 
-                foreach (var commandPair in slashNameActionMap)
-                {
-                    var slashCommandBuilder = new SlashCommandBuilder();
-                    slashCommandBuilder.WithName(commandPair.Key);
-                    slashCommandBuilder.WithDescription(commandPair.Value.description);
-                    await guild.CreateApplicationCommandAsync(slashCommandBuilder.Build());
-                }
+                await guild.CreateApplicationCommandAsync(voiceCommandBuilder.Build());
+                await guild.CreateApplicationCommandAsync(personalityCommandBuilder.Build());
+                await guild.CreateApplicationCommandAsync(clearCommandBuilder.Build());
 
                 guildOptionsDict.Add(guild.Id, new()
                 {
-                    PersonalityPrompt = personalities.FirstOrDefault().Value,
-                    VoiceId = voices.FirstOrDefault().Key ?? "",
+                    GuildId = guild.Id,
+                    Personality = personalities.FirstOrDefault().Key,
+                    Voice = voices.FirstOrDefault().Key,
                 });
 
-                var personalityComponentBuilder = new ComponentBuilder()
-                    .WithSelectMenu(
-                    "Personality",
-                    personalities.ToList().ConvertAll(
-                        personality => new SelectMenuOptionBuilder()
-                        .WithValue(personality.Value)
-                        .WithLabel(personality.Key)
-                        ),
-                    personalities.First().Key
-                    );
-                await channel.SendMessageAsync(text: "Choose a personality:", components: personalityComponentBuilder.Build());
-
-                var voiceComponentBuilder = new ComponentBuilder()
-                    .WithSelectMenu(
-                    "Voice",
-                    voices.ToList().ConvertAll(
-                        voice => new SelectMenuOptionBuilder()
-                        .WithValue(voice.Value.Id)
-                        .WithLabel(voice.Value.Name)
-                        ),
-                    voices.First().Value.Name
-                    );
-                await channel.SendMessageAsync(text: "Choose a voice:", components: voiceComponentBuilder.Build());
+                await channel.SendMessageAsync($"Hi! I'm using personality \"{personalities.First().Key}\" and voice \"{voices.First().Key}\"");
             }
         }
 
@@ -157,33 +155,35 @@ namespace ElevenGPT
                 return Task.CompletedTask;
             }
 
-            var buildableCommand = slashNameActionMap[cmd.CommandName];
+            ElevenGPTOptions options = guildOptionsDict[cmd.GuildId ?? 0];
 
             Task.Run(async () =>
             {
-                await cmd.RespondAsync(buildableCommand.description);
-                await buildableCommand.callback(cmd);
-            });
-
-            return Task.CompletedTask;
-        }
-
-        private Task SelectMenuExecuted(SocketMessageComponent socketMessageComponent)
-        {
-            ElevenGPTOptions guildOptions = guildOptionsDict[socketMessageComponent.GuildId ?? 0];
-
-            Task.Run(async () =>
-            {
-                if (socketMessageComponent.Data.CustomId == "Personality")
+                switch(cmd.CommandName)
                 {
-                    guildOptions.PersonalityPrompt = socketMessageComponent.Data.Value;
-                }
-                else
-                {
-                    guildOptions.VoiceId = socketMessageComponent.Data.Value;
+                    case "voice":
+                        options.Voice = cmd.Data.Options.First().Name;
+                        break;
+                    case "personality":
+                        options.Personality = cmd.Data.Options.First().Name;
+                        if (voices.Keys.Contains(options.Personality))
+                        {
+                            options.Voice = options.Personality;
+                        }
+                        break;
+                    case "clear-conversation":
+                        await cmd.RespondAsync($"Cleared conversation with {options.Personality}");
+                        chatGpt!.ResetConversation(options.ConversationId);
+                        await chatGpt.Ask(basePrompt + personalities[options.Personality], options.ConversationId);
+                        return;
+                    case "api-check":
+                        
+                    default:
+                        await cmd.RespondAsync("Error, invalid command.");
+                        break;
                 }
 
-                await socketMessageComponent.RespondAsync();
+                await cmd.RespondAsync($"I am now speaking as {options.Personality} with the voice of {options.Voice}");
             });
 
             return Task.CompletedTask;
@@ -208,25 +208,25 @@ namespace ElevenGPT
                 return Task.CompletedTask;
             }
 
-
             ElevenGPTOptions options = guildOptionsDict[messageChannel.Guild.Id];
             Task.Run(async () =>
             {
-                await GPTRespondAsync(msg.Content, options, ((SocketGuildUser)msg.Author).VoiceChannel);
+                await GPTRespondAsync(msg, options, ((SocketGuildUser)msg.Author).VoiceChannel);
             });
-
-            Console.WriteLine($"Recived message for voice: {options.VoiceId} and prompt: {options.PersonalityPrompt}");
 
             return Task.CompletedTask;
         }
 
-        private static async Task GPTRespondAsync(string text, ElevenGPTOptions options, SocketVoiceChannel voiceChannel)
+        private static async Task GPTRespondAsync(SocketMessage msg, ElevenGPTOptions options, SocketVoiceChannel voiceChannel)
         {
-            ChatGpt chatGpt = new(chatGPTToken);
-            ElevenLabsClient elevenLabs = new(elevenLabsToken);
-            ElevenLabs.Voices.Voice voice = voices[options.VoiceId];
-            string response = await chatGpt.Ask(text);
-            string speechPath = await elevenLabs.TextToSpeechEndpoint.TextToSpeechAsync(response, voice);
+            ElevenLabs.Voices.Voice voice = voices[options.Voice];
+            if (!chatGpt!.Conversations.Exists(conversation => conversation.Id == options.ConversationId))
+            {
+                await chatGpt.Ask(basePrompt + options.Personality, options.ConversationId);
+            }
+            string response = await chatGpt.Ask(msg.Content, options.ConversationId);
+            await msg.Channel.SendMessageAsync(options.ConversationHeader + response);
+            string speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(response, voice);
             IAudioClient audioClient = await voiceChannel.ConnectAsync();
             await SpeakAsync(audioClient, speechPath);
             await voiceChannel.DisconnectAsync();
@@ -248,7 +248,7 @@ namespace ElevenGPT
             return Process.Start(new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments = $"-hide_banner -loglevel quiet -i \"{path}\" -ac 2 -f s16le -ar 48000 pipe:1",
+                Arguments = $"-hide_banner -loglevel quiet -i \"{path}\" -ac 2 -f s16le -ar 48000 pipe:1 -filter:a \"volume=3.0\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
             })!;
