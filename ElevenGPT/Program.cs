@@ -176,8 +176,6 @@ namespace ElevenGPT
                         chatGpt!.ResetConversation(options.ConversationId);
                         await chatGpt.Ask(basePrompt + personalities[options.Personality], options.ConversationId);
                         return;
-                    case "api-check":
-                        
                     default:
                         await cmd.RespondAsync("Error, invalid command.");
                         break;
