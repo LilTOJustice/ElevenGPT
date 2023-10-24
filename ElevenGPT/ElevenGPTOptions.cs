@@ -2,8 +2,8 @@
 {
     struct ElevenGPTOptions
     {
-        public string Personality { get; set; }
+        public string PersonalityPrompt { get; set; }
         
-        public string Voice { get; set; }
+        public string VoiceId { get; set; }
     }
 }
