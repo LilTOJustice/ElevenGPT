@@ -20,9 +20,21 @@ namespace ElevenGPT
                 "Patrick Bateman, the main character of the hit movie, American Psycho."
             },
             {
+                "aidencaldwell",
+                "Aiden Caldwell, the main character from the video game Dying Light 2."
+            },
+            {
+                "nick",
+                "Nick, a recent graduate with a computer science degree, who is incidentally incredibly stupid, but very passionate about music and software engineering."
+            },
+            {
                 "thenarrator",
                 "The Narrator from the popular videogame, The Stanley parable."
             },
+            {
+                "ricksanchez",
+                "Rick Sanchez from the show, Rick and Morty."
+            }
         };
 
         private static Dictionary<string, ElevenLabs.Voices.Voice> voices = new();
@@ -118,7 +130,10 @@ namespace ElevenGPT
             }
 
             var clearCommandBuilder = new SlashCommandBuilder();
-            clearCommandBuilder.WithName("clear-conversation").WithDescription("Clears the conversation with the current personality");
+            clearCommandBuilder.WithName("clear-conversation").WithDescription("Clears the conversation with the current personality.");
+
+            var apiCheckCommandBuilder = new SlashCommandBuilder();
+            apiCheckCommandBuilder.WithName("api-check").WithDescription("Displays API resource info.");
 
             foreach (var guild in client.Guilds)
             {
@@ -136,6 +151,7 @@ namespace ElevenGPT
                 await guild.CreateApplicationCommandAsync(voiceCommandBuilder.Build());
                 await guild.CreateApplicationCommandAsync(personalityCommandBuilder.Build());
                 await guild.CreateApplicationCommandAsync(clearCommandBuilder.Build());
+                await guild.CreateApplicationCommandAsync(apiCheckCommandBuilder.Build());
 
                 guildOptionsDict.Add(guild.Id, new()
                 {
@@ -172,13 +188,17 @@ namespace ElevenGPT
                         }
                         break;
                     case "clear-conversation":
-                        await cmd.RespondAsync($"Cleared conversation with {options.Personality}");
                         chatGpt!.ResetConversation(options.ConversationId);
                         await chatGpt.Ask(basePrompt + personalities[options.Personality], options.ConversationId);
+                        await cmd.RespondAsync($"Cleared conversation with {options.Personality}");
+                        return;
+                    case "api-check":
+                        var subscriptionInfo = await elevenLabs!.UserEndpoint.GetSubscriptionInfoAsync();
+                        await cmd.RespondAsync($"ElevenLabs characters used: {subscriptionInfo.CharacterCount}/{subscriptionInfo.CharacterLimit}");
                         return;
                     default:
                         await cmd.RespondAsync("Error, invalid command.");
-                        break;
+                        return;
                 }
 
                 await cmd.RespondAsync($"I am now speaking as {options.Personality} with the voice of {options.Voice}");
