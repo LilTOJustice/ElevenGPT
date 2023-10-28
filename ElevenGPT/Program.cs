@@ -157,11 +157,11 @@ namespace ElevenGPT
                 guildOptionsDict.Add(guild.Id, new()
                 {
                     GuildId = guild.Id,
-                    Personality = personalities.FirstOrDefault().Key,
+                    Personality = "repeat",
                     Voice = voices.FirstOrDefault().Key,
                 });
 
-                await channel.SendMessageAsync($"Hi! I'm using personality \"{personalities.First().Key}\" and voice \"{voices.First().Key}\"");
+                await channel.SendMessageAsync(guildOptionsDict[guild.Id].ConversationHeader);
             }
         }
 
@@ -244,6 +244,8 @@ namespace ElevenGPT
             if (options.Personality == "repeat")
             {
                 speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(msg.Content, voice);
+                await msg.DeleteAsync();
+                await msg.Channel.SendMessageAsync("`Repeating:`\n" + msg.Content);
             }
             else
             {
