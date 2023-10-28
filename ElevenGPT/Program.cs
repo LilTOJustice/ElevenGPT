@@ -15,6 +15,10 @@ namespace ElevenGPT
         private static readonly string basePrompt = "You are to become the character given by the description in the next sentence," +
             " are to respond as that character without ever breaking character, and refrain from multiple paragraph-long responses. ";
         private static Dictionary<string, string> personalities = new() {
+            { 
+                "repeat",
+                "Don't actually impersonate a character, instead just repeat back every thing you hear."
+            },
             {
                 "patrickbateman",
                 "Patrick Bateman, the main character of the hit movie, American Psycho."
