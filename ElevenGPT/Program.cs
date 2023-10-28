@@ -28,6 +28,10 @@ namespace ElevenGPT
                 "Nick, a recent graduate with a computer science degree, who is incidentally incredibly stupid, but very passionate about music and software engineering."
             },
             {
+                "ruvim",
+                ""
+            },
+            {
                 "thenarrator",
                 "The Narrator from the popular videogame, The Stanley parable."
             },
@@ -210,7 +214,7 @@ namespace ElevenGPT
 
         private Task MessageReceived(SocketMessage msg)
         {
-            if (msg.Author.IsBot || msg.Channel.Name != "elevengpt-requests")
+            if (msg.Author.IsBot || msg.Channel.Name != msgChannelName)
             {
                 return Task.CompletedTask;
             }
@@ -243,9 +247,9 @@ namespace ElevenGPT
 
             if (options.Personality == "repeat")
             {
-                speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(msg.Content, voice);
                 await msg.DeleteAsync();
                 await msg.Channel.SendMessageAsync("`Repeating:`\n" + msg.Content);
+                speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(msg.Content, voice);
             }
             else
             {
@@ -256,7 +260,7 @@ namespace ElevenGPT
 
                 string response = await chatGpt.Ask(msg.Content, options.ConversationId);
                 await msg.Channel.SendMessageAsync(options.ConversationHeader + response);
-                await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(response, voice);
+                speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(response, voice);
             }
 
             IAudioClient audioClient = await voiceChannel.ConnectAsync();
