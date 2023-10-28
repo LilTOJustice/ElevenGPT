@@ -15,10 +15,6 @@ namespace ElevenGPT
         private static readonly string basePrompt = "You are to become the character given by the description in the next sentence," +
             " are to respond as that character without ever breaking character, and refrain from multiple paragraph-long responses. ";
         private static Dictionary<string, string> personalities = new() {
-            { 
-                "repeat",
-                "Don't actually impersonate a character, instead just repeat back every thing you hear."
-            },
             {
                 "patrickbateman",
                 "Patrick Bateman, the main character of the hit movie, American Psycho."
@@ -132,6 +128,7 @@ namespace ElevenGPT
             {
                 personalityCommandBuilder.AddOption(personality.Key, ApplicationCommandOptionType.SubCommand, "Choose a personality to use for the response.");
             }
+            personalityCommandBuilder.AddOption("repeat", ApplicationCommandOptionType.SubCommand, "Choose a personality to use for the response.");
 
             var clearCommandBuilder = new SlashCommandBuilder();
             clearCommandBuilder.WithName("clear-conversation").WithDescription("Clears the conversation with the current personality.");
@@ -242,13 +239,24 @@ namespace ElevenGPT
         private static async Task GPTRespondAsync(SocketMessage msg, ElevenGPTOptions options, SocketVoiceChannel voiceChannel)
         {
             ElevenLabs.Voices.Voice voice = voices[options.Voice];
-            if (!chatGpt!.Conversations.Exists(conversation => conversation.Id == options.ConversationId))
+            string speechPath = "";
+
+            if (options.Personality == "repeat")
             {
-                await chatGpt.Ask(basePrompt + options.Personality, options.ConversationId);
+                speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(msg.Content, voice);
             }
-            string response = await chatGpt.Ask(msg.Content, options.ConversationId);
-            await msg.Channel.SendMessageAsync(options.ConversationHeader + response);
-            string speechPath = await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(response, voice);
+            else
+            {
+                if (!chatGpt!.Conversations.Exists(conversation => conversation.Id == options.ConversationId))
+                {
+                    await chatGpt.Ask(basePrompt + options.Personality, options.ConversationId);
+                }
+
+                string response = await chatGpt.Ask(msg.Content, options.ConversationId);
+                await msg.Channel.SendMessageAsync(options.ConversationHeader + response);
+                await elevenLabs!.TextToSpeechEndpoint.TextToSpeechAsync(response, voice);
+            }
+
             IAudioClient audioClient = await voiceChannel.ConnectAsync();
             await SpeakAsync(audioClient, speechPath);
             await voiceChannel.DisconnectAsync();
